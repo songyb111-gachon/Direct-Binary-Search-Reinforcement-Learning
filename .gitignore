@@ -1,0 +1,144 @@
+dataset1/
+dataset10/
+torchOptics/
+.ipynb_checkpoints/
+result/
+result_v/
+.idea/
+*.ipynb1
+
+# 일반적인 OS 파일
+.DS_Store                # macOS
+Thumbs.db                # Windows
+*.swp                    # Vim swap files
+*.swo
+*.~lock.*                # LibreOffice lock files
+Icon?                    # macOS
+
+# IDE/Editor 관련 파일
+.vscode/                 # VSCode 설정 폴더
+.idea/                   # IntelliJ IDEA 설정 폴더
+*.iml                    # IntelliJ IDEA 모듈 파일
+*.code-workspace         # VSCode workspace 파일
+*.sublime-*              # Sublime Text 관련 파일
+
+# 로그 파일
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Node.js
+node_modules/
+dist/
+build/
+.npm/
+*.tgz
+
+# Python
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+*.env
+*.venv
+*.egg-info/
+.eggs/
+*.coverage
+.coverage.*
+
+# Java
+*.class
+*.jar
+*.war
+*.ear
+*.iml
+target/
+out/
+
+# C/C++
+*.obj
+*.exe
+*.dll
+*.so
+*.o
+*.a
+*.lib
+
+# Go
+bin/
+*.exe
+
+# PHP
+vendor/
+
+# Ruby
+*.gem
+*.rbc
+.bundle/
+vendor/bundle
+log/*
+tmp/*
+!log/.keep
+!tmp/.keep
+
+# Rust
+target/
+
+# Android/Java
+*.apk
+*.ap_
+*.dex
+*.class
+*.so
+*.apk
+*.aar
+.gradle/
+build/
+local.properties
+captures/
+
+# iOS
+*.xcodeproj/
+*.xcworkspace/
+*.xcuserstate
+*.xcuserdata/
+
+# 기타
+.env
+*.tmp
+*.bak
+*.old
+*.orig
+*.rej
+*.suo
+*.user
+*.xlk
+*.idb
+*.pid
+*.seed
+*.pid.lock
+*.sqlite3
+*.sql
+
+# Compression and archives
+*.zip
+*.tar
+*.7z
+*.gz
+*.rar
+*.bz2
+
+# Temporary or backup files
+*.tmp
+*.bak
+*.swp
+*.swo
+*.old
+*.orig
+*.rej
+
+# Markdown editor temp files
+*~.md
+~$*
+
