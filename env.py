@@ -120,7 +120,7 @@ class BinaryHologramEnv(gym.Env):
             # 상태 롤백
             self.state[0, channel, row, col] = 1 - self.state[0, channel, row, col]
 
-        step_poly = np.array([num_samples, num_samples*90/100, num_samples*8/100, num_samples*50/100, num_samples*25/100, 1])
+        step_poly = np.array([num_samples, num_samples*90/100, num_samples*80/100, num_samples*50/100, num_samples*25/100, 1])
         rewards_poly = np.array([-0.5, -0.48, -0.45, -0.35, 0, 1])
         degree_poly = len(step_poly) - 1  # degree = 5
         coefficients_poly = np.polyfit(step_poly, rewards_poly, degree_poly)
