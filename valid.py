@@ -275,13 +275,15 @@ model.eval()
 ppo_model_path = "./ppo_MlpPolicy_models/ppo_MlpPolicy_latest.zip"
 ppo_model = PPO.load(ppo_model_path)
 
-# 환경 생성
+# 환경 생성에 새로운 데이터 로더 적용
 env = BinaryHologramEnv(
     target_function=model,
     trainloader=valid_loader,
     max_steps=10000,
     T_PSNR=30,
-    T_PSNR_DIFF=0.1
+    T_steps=1,
+    T_PSNR_DIFF=1/4,
+    num_samples=10000
 )
 
 # 결과를 저장할 디렉토리 설정
