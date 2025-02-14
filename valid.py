@@ -282,8 +282,8 @@ env = BinaryHologramEnv(
     max_steps=10000,
     T_PSNR=30,
     T_steps=1,
-    T_PSNR_DIFF=1/4,
-    num_samples=10000
+    T_PSNR_DIFF=1,
+    num_samples=1000
 )
 
 # 결과를 저장할 디렉토리 설정
