@@ -102,7 +102,8 @@ def parse_log2(log_text):
 def generate_comparison_texts(log1_text, log2_text):
     """
     두 로그의 텍스트를 파싱한 후, 각 에피소드별로
-    로그1의 Step, 로그2의 Step, 그리고 그 차이(로그2 - 로그1)를 계산하여
+    로그1의 Step, 로그2의 Step, 그리고 그 차이(로그2 - 로그1)와
+    그에 따른 퍼센트 변화값을 계산하여
     원래 데이터 순서(에피소드 순)와 차이값 순으로 정렬한 두 가지 결과를
     각각 표 형식의 문자열로 반환합니다.
     """
@@ -115,18 +116,23 @@ def generate_comparison_texts(log1_text, log2_text):
         step1 = ep1.get("step")
         step2 = ep2.get("step")
         diff = None
+        percent = None
         if step1 is not None and step2 is not None:
             diff = step2 - step1
+            if step1 != 0:
+                percent = (diff / step1) * 100
         rows.append({
             "episode": ep1.get("episode"),
             "file": ep1.get("file"),
             "step1": step1,
             "step2": step2,
-            "diff": diff
+            "diff": diff,
+            "percent": percent
         })
 
-    # 표 헤더와 구분선
-    header = f"{'Episode':>7} | {'File':>7} | {'Step (Log1)':>12} | {'Step (Log2)':>12} | {'Diff':>10}\n"
+    # 표 헤더와 구분선 (새로운 컬럼 'Diff (%)' 추가)
+    header = (f"{'Episode':>7} | {'File':>7} | {'Step (Log1)':>12} | "
+              f"{'Step (Log2)':>12} | {'Diff':>10} | {'Diff (%)':>10}\n")
     divider = "-" * (len(header) - 1) + "\n"
 
     def safe_format_int(value, width):
@@ -135,6 +141,14 @@ def generate_comparison_texts(log1_text, log2_text):
         else:
             return f"{value:>{width}d}"
 
+    def safe_format_percent(value, width):
+        if value is None:
+            return "N/A".rjust(width)
+        else:
+            # 소수점 둘째 자리까지 표시 후 오른쪽 정렬
+            result = f"{value:.2f}%"
+            return result.rjust(width)
+
     # (1) 원래 데이터(에피소드 순) 정렬 결과
     natural_lines = [header, divider]
     for row in rows:
@@ -142,7 +156,8 @@ def generate_comparison_texts(log1_text, log2_text):
                 f"{str(row['file']).rjust(7)} | "
                 f"{safe_format_int(row['step1'], 12)} | "
                 f"{safe_format_int(row['step2'], 12)} | "
-                f"{safe_format_int(row['diff'], 10)}\n")
+                f"{safe_format_int(row['diff'], 10)} | "
+                f"{safe_format_percent(row['percent'], 10)}\n")
         natural_lines.append(line)
     natural_output = "".join(natural_lines)
 
@@ -154,7 +169,8 @@ def generate_comparison_texts(log1_text, log2_text):
                 f"{str(row['file']).rjust(7)} | "
                 f"{safe_format_int(row['step1'], 12)} | "
                 f"{safe_format_int(row['step2'], 12)} | "
-                f"{safe_format_int(row['diff'], 10)}\n")
+                f"{safe_format_int(row['diff'], 10)} | "
+                f"{safe_format_percent(row['percent'], 10)}\n")
         sorted_lines.append(line)
     sorted_output = "".join(sorted_lines)
 
@@ -167,7 +183,7 @@ def main():
     root.withdraw()
 
     # 첫 번째 로그 파일 선택
-    messagebox.showinfo("파일 선택", "첫 번째 로그 파일 (예: log1.log)을 선택하세요.")
+    messagebox.showinfo("파일 선택", "첫 번째 로그 파일 (예: DBS log1.log)을 선택하세요.")
     log1_path = filedialog.askopenfilename(
         title="첫 번째 로그 파일 선택",
         filetypes=[("Log Files", "*.log"), ("All Files", "*.*")]
@@ -177,7 +193,7 @@ def main():
         return
 
     # 두 번째 로그 파일 선택
-    messagebox.showinfo("파일 선택", "두 번째 로그 파일 (예: log2.log)을 선택하세요.")
+    messagebox.showinfo("파일 선택", "두 번째 로그 파일 (예: 강화학습 log2.log)을 선택하세요.")
     log2_path = filedialog.askopenfilename(
         title="두 번째 로그 파일 선택",
         filetypes=[("Log Files", "*.log"), ("All Files", "*.*")]
@@ -203,7 +219,7 @@ def main():
     # 두 로그에서 비교 결과(원래 순서 및 차이값 정렬)를 생성
     natural_output, sorted_output = generate_comparison_texts(log1_text, log2_text)
     combined_text = "==== 데이터 순서(에피소드 순) 정렬 결과 ====\n" + natural_output + "\n\n"
-    combined_text += "==== 차이값(로그2 - 로그1) 순 정렬 결과 ====\n" + sorted_output
+    combined_text += "==== 차이값(강화학습 로그2 - DBS 로그1) 순 정렬 결과 ====\n" + sorted_output
 
     # 결과를 표시할 새 창 생성 (스크롤 가능한 텍스트 위젯 사용)
     result_window = tk.Toplevel()

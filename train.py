@@ -274,7 +274,12 @@ model.eval()
 # 환경 생성에 새로운 데이터 로더 적용
 env = BinaryHologramEnv(
     target_function=model,
-    trainloader=train_loader, 
+    trainloader=train_loader,
+    max_steps=10000,
+    T_PSNR=30,
+    T_steps=1,
+    T_PSNR_DIFF=1/4,
+    num_samples=10000
 )
 
 # 저장할 폴더 경로 설정

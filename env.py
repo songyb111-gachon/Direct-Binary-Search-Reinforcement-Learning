@@ -35,7 +35,7 @@ current_date = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
 # BinaryHologramEnv 클래스
 class BinaryHologramEnv(gym.Env):
-    def __init__(self, target_function, trainloader, max_steps=10000, T_PSNR=30, T_steps=1, T_PSNR_DIFF=0.1):
+    def __init__(self, target_function, trainloader, max_steps=10000, T_PSNR=30, T_steps=1, T_PSNR_DIFF=1/4, num_samples=10000):
         super(BinaryHologramEnv, self).__init__()
 
         # 관찰 공간 정보
@@ -60,6 +60,8 @@ class BinaryHologramEnv(gym.Env):
         self.T_PSNR = T_PSNR
         self.T_steps = T_steps
         self.T_PSNR_DIFF = T_PSNR_DIFF
+        self.num_samples = num_samples
+        self.target_step = self.T_PSNR_DIFF * self.num_samples
 
         # 학습 상태 초기화
         self.state = None
@@ -88,8 +90,8 @@ class BinaryHologramEnv(gym.Env):
         self.episode_num_count = 0
 
     def _calculate_pixel_importance(self, binary, z):
-        """랜덤으로 1만 개 픽셀 플립 후 PSNR 변화량을 순위화 및 양수 변화량 총합 계산"""
-        num_samples = 10000
+        #랜덤으로 1만 개 픽셀 플립 후 PSNR 변화량을 순위화 및 양수 변화량 총합 계산
+        num_samples = self.num_samples
         psnr_changes = []
         positive_psnr_sum = 0  # 양수 PSNR 변화량 총합 초기화
 
@@ -118,7 +120,7 @@ class BinaryHologramEnv(gym.Env):
             # 상태 롤백
             self.state[0, channel, row, col] = 1 - self.state[0, channel, row, col]
 
-        step_poly = np.array([10000, 9000, 8000, 5000, 2500, 1])
+        step_poly = np.array([num_samples, num_samples*90/100, num_samples*8/100, num_samples*50/100, num_samples*25/100, 1])
         rewards_poly = np.array([-0.5, -0.48, -0.45, -0.35, 0, 1])
         degree_poly = len(step_poly) - 1  # degree = 5
         coefficients_poly = np.polyfit(step_poly, rewards_poly, degree_poly)
@@ -136,7 +138,7 @@ class BinaryHologramEnv(gym.Env):
             # 순위(rank)를 [10000, 1] 범위의 x값으로 선형 변환
             # rank = 0  -> x_val = 10000
             # rank = num_samples-1 -> x_val = 1
-            x_val = 10000 - (10000 - 1) * (rank / (num_samples - 1))
+            x_val = num_samples - (num_samples - 1) * (rank / (num_samples - 1))
             # 다항식 보상 함수를 사용하여 보상값 계산
             importance_ranks[idx] = poly_reward(x_val)
 
@@ -195,7 +197,7 @@ class BinaryHologramEnv(gym.Env):
             f"\nTime taken for psnr_change_list: {data_processing_time:.2f} seconds"
         )
 
-        self.T_PSNR_DIFF = positive_psnr_sum / 4
+        self.T_PSNR_DIFF = self.T_PSNR_DIFF * positive_psnr_sum
         print(f"\033[94m[Dynamic Threshold] T_PSNR_DIFF set to: {self.T_PSNR_DIFF:.6f}\033[0m")
 
         obs = {"state_record": self.state_record,
@@ -291,11 +293,10 @@ class BinaryHologramEnv(gym.Env):
             )
             self.psnr_sustained_steps += 1
 
-            if self.psnr_sustained_steps >= self.T_steps and psnr_diff >= self.T_PSNR_DIFF:  # 성공 에피소드 조건
+            if self.psnr_sustained_steps >= self.T_steps and psnr_diff >= self.T_PSNR_DIFF:   # 성공 에피소드 조건
                 # 스텝에 따른 추가 보상 계산 (선형 보상)
-                # 스텝이 1000일 때: 100, 2500일 때: -100
-                m = -200.0 / 1500.0  # 기울기 계산: (-100 - 100) / (2500 - 1000)
-                additional_reward = 100 + m * (self.steps - 1000)
+                m = -1000 / (3 * self.target_step)
+                additional_reward = 100 + m * (self.steps - (2 / 5) * self.target_step)
                 reward += additional_reward
 
         if self.steps >= self.max_steps:
@@ -309,9 +310,8 @@ class BinaryHologramEnv(gym.Env):
                 f"\nTime taken for this data: {data_processing_time:.2f} seconds"
             )
             # 스텝에 따른 추가 보상 계산 (선형 보상)
-            # 스텝이 1000일 때: 100, 2500일 때: -100
-            m = -200.0 / 1500.0  # 기울기 계산: (-100 - 100) / (2500 - 1000)
-            additional_reward = 100 + m * (self.steps - 1000)
+            m = -1000 / (3 * self.target_step)
+            additional_reward = 100 + m * (self.steps - (2 / 5) * self.target_step)
             reward += additional_reward
 
         # 성공 종료 조건: PSNR >= T_PSNR 또는 PSNR_DIFF >= T_PSNR_DIFF
