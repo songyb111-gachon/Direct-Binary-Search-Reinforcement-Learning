@@ -59,9 +59,10 @@ class BinaryHologramEnv(gym.Env):
         self.max_steps = max_steps
         self.T_PSNR = T_PSNR
         self.T_steps = T_steps
-        self.T_PSNR_DIFF = T_PSNR_DIFF
+        self.T_PSNR_DIFF_o = T_PSNR_DIFF
+        self.T_PSNR_DIFF = None
         self.num_samples = num_samples
-        self.target_step = self.T_PSNR_DIFF * self.num_samples
+        self.target_step = self.T_PSNR_DIFF_o * self.num_samples
 
         # 학습 상태 초기화
         self.state = None
@@ -197,7 +198,7 @@ class BinaryHologramEnv(gym.Env):
             f"\nTime taken for psnr_change_list: {data_processing_time:.2f} seconds"
         )
 
-        self.T_PSNR_DIFF = self.T_PSNR_DIFF * positive_psnr_sum
+        self.T_PSNR_DIFF = self.T_PSNR_DIFF_o * positive_psnr_sum
         print(f"\033[94m[Dynamic Threshold] T_PSNR_DIFF set to: {self.T_PSNR_DIFF:.6f}\033[0m")
 
         obs = {"state_record": self.state_record,
