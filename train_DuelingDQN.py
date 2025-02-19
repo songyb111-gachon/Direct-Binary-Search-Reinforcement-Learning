@@ -282,39 +282,46 @@ env = BinaryHologramEnv(
     num_samples=10000
 )
 
+from stable_baselines3 import DQN
+
 # 저장할 폴더 경로 설정
-save_dir = "./ppo_MlpPolicy_models/"  # 모델 저장 디렉토리
+save_dir = "./DuelingDQN_MlpPolicy_models/"  # 모델 저장 디렉토리
 os.makedirs(save_dir, exist_ok=True)  # 디렉토리가 없으면 생성
 
 # 모델 저장 경로 설정
-ppo_model_path = os.path.join(save_dir, "ppo_MlpPolicy_latest.zip")  # 최신 PPO 모델 저장 경로
+DQN_model_path = os.path.join(save_dir, "DuelingDQN_MlpPolicy_latest.zip")  # 최신 PPO 모델 저장 경로
 resume_training = True  # True로 설정하면 이전 모델에서 학습 재개
 
-# PPO 모델 로드 또는 새로 생성
-if resume_training and os.path.exists(ppo_model_path):
-    print(f"Loading trained PPO model from {ppo_model_path}")
-    ppo_model = PPO.load(ppo_model_path, env=env)
+# QRDQN 모델 로드 또는 새로 생성
+if resume_training and os.path.exists(DQN_model_path):
+    print(f"Loading trained DQN model from {DQN_model_path}")
+    DQN_model = DQN.load(DQN_model_path, env=env)
 else:
     if resume_training:
-        print(f"Warning: PPO model not found at {ppo_model_path}. Starting training from scratch.")
+        print(f"Warning: DuelingDQN model not found at {DQN_model_path}. Starting training from scratch.")
     print("Starting training from scratch.")
-    ppo_model = PPO(
-        "MultiInputPolicy",  # MlpPolicy 대신 MultiInputPolicy 사용
+    policy_kwargs = {
+        "net_arch": [256, 128],
+        "dueling": True,
+    }
+    DQN_model = DQN(
+        "MultiInputPolicy",
         env,
         verbose=2,
-        n_steps=1024,
-        batch_size=256,
-        gamma=0.99,
-        gae_lambda=1.0,  # 일반 Advantage 사용
         learning_rate=1e-4,
-        clip_range=0.2,
-        vf_coef=0.0,  # 가치 함수 제거
-        max_grad_norm=0.5,
-        ent_coef=0.01,
-        tensorboard_log="./ppo_MultiInputPolicy/",
-        policy_kwargs={
-            "net_arch": [dict(pi=[256,128,64,32], vf=[])],
-        },
+        buffer_size=50000,
+        learning_starts=10000,
+        batch_size=64,
+        tau=0.005,  # Soft 업데이트 적용
+        gamma=0.99,
+        train_freq=4,
+        gradient_steps=1,
+        target_update_interval=1000,
+        exploration_fraction=0.1,
+        exploration_final_eps=0.01,
+        policy_kwargs=policy_kwargs,
+        tensorboard_log="./dqn_dueling_MultiInputPolicy/",
+        double_q=True  # Double DQN도 같이 적용 가능
     )
 
 # 콜백 설정
@@ -324,20 +331,20 @@ stop_callback = StopOnEpisodeCallback(max_episodes=max_episodes)
 callback = CallbackList([reward_logging_callback, stop_callback])
 
 # 학습 시작
-ppo_model.learn(total_timesteps=1000000000, callback=callback)
+DQN_model.learn(total_timesteps=1000000000, callback=callback)
 
 # 모델 저장
 current_date = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 print(f"Start {current_date}_model saving at {save_dir}")
-ppo_model_save_path = os.path.join(save_dir, f"ppo_MlpPolicy_{current_date}.zip")
-ppo_model.save(ppo_model_save_path)
-print(f"PPO Model saved at {save_dir}")
+DQN_model_save_path = os.path.join(save_dir, f"DuelingDQN_MlpPolicy_{current_date}.zip")
+DQN_model.save(DQN_model_save_path)
+print(f"DuelingDQN Model saved at {save_dir}")
 
 # 최신 모델 업데이트
 print(f"Start latest_model updating at {save_dir}")
-ppo_model_latest_path = os.path.join(save_dir, "ppo_MlpPolicy_latest.zip")
+DQN_model_latest_path = os.path.join(save_dir, "DuelingDQN_MlpPolicy_latest.zip")
 
 # 최신 모델을 덮어쓰기 위해 기존 모델 파일 복사
-if os.path.exists(ppo_model_latest_path):
-    os.remove(ppo_model_latest_path)  # 기존 파일 삭제
-shutil.copyfile(ppo_model_save_path, ppo_model_latest_path)
+if os.path.exists(DQN_model_latest_path):
+    os.remove(DQN_model_latest_path)  # 기존 파일 삭제
+shutil.copyfile(DQN_model_save_path, DQN_model_latest_path)
