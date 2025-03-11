@@ -256,7 +256,7 @@ class BinaryHologramEnv(gym.Env):
                 f"\nTime taken for psnr_change_list: {data_processing_time:.2f} seconds"
             )
 
-            self.T_PSNR_DIFF = self.T_PSNR_DIFF_o * C
+            self.T_PSNR_DIFF = self.T_PSNR_DIFF_o * positive_psnr_sum
             print(f"\033[94m[Dynamic Threshold] T_PSNR_DIFF set to: {self.T_PSNR_DIFF:.6f}\033[0m")
 
         obs = {"state_record": self.state_record,
