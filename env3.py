@@ -259,6 +259,240 @@ class BinaryHologramEnv(gym.Env):
             self.T_PSNR_DIFF = self.T_PSNR_DIFF_o * positive_psnr_sum
             print(f"\033[94m[Dynamic Threshold] T_PSNR_DIFF set to: {self.T_PSNR_DIFF:.6f}\033[0m")
 
+            if positive_psnr_sum < self.reference_point:
+                print(
+                    f"\033[91m[WARNING] positive_psnr_sum ({positive_psnr_sum:.6f}) is below reference_point ({self.reference_point:.6f}). Retrying with a new dataset sample.\033[0m")
+
+                # 이터레이터에서 다음 데이터를 가져옴
+                try:
+                    self.target_image, self.current_file = next(self.data_iter)
+                except StopIteration:
+                    # 데이터셋 끝에 도달하면 이터레이터를 다시 생성하고 처음부터 다시 시작
+                    print(f"\033[40;93m[INFO] Reached the end of dataset. Restarting from the beginning.\033[0m")
+                    self.data_iter = iter(self.trainloader)
+                    self.target_image, self.current_file = next(self.data_iter)
+
+                print(
+                    f"\033[40;93m[Episode Start] Currently using dataset file: {self.current_file}, Episode count: {self.episode_num_count}\033[0m")
+
+                self.target_image = self.target_image.cuda()
+                self.target_image_np = self.target_image.cpu().numpy()
+
+                with torch.no_grad():
+                    model_output = self.target_function(self.target_image)
+                self.observation = model_output.cpu().numpy()  # (1, CH, IPS, IPS)
+
+                # 매 에피소드마다 초기화
+                self.max_psnr_diff = float('-inf')
+                self.steps = 0
+                self.flip_count = 0
+                self.psnr_sustained_steps = 0
+                self.next_print_thresholds = 0
+
+                self.state = (self.observation >= 0.5).astype(np.int8)  # 초기 Binary state
+                self.state_record = np.zeros_like(self.state)  # 플립 횟수를 저장하기 위한 배열 초기화
+
+                binary = torch.tensor(self.state, dtype=torch.float32).cuda()  # (1, CH, IPS, IPS)
+                binary = tt.Tensor(binary, meta={'dx': (7.56e-6, 7.56e-6), 'wl': 515e-9})  # meta 정보 포함
+
+                # 시뮬레이션
+                sim = tt.simulate(binary, z).abs() ** 2
+                result = torch.mean(sim, dim=1, keepdim=True)
+
+                # MSE 및 PSNR 계산
+                mse = tt.relativeLoss(result, self.target_image, F.mse_loss).detach().cpu().numpy()
+                self.initial_psnr = tt.relativeLoss(result, self.target_image, tm.get_PSNR)  # 초기 PSNR 저장
+                self.previous_psnr = self.initial_psnr  # 초기 PSNR 저장
+
+                # 1만 개 픽셀 플립 후 PSNR 변화량 순위화 및 양수 변화량 총합 계산
+                rw_start_time = time.time()
+                self.psnr_change_list, self.importance_ranks, positive_psnr_sum = self._calculate_pixel_importance(
+                    binary,
+                    z)
+                data_processing_time = time.time() - rw_start_time
+                print(
+                    f"\nTime taken for psnr_change_list: {data_processing_time:.2f} seconds"
+                )
+
+                self.T_PSNR_DIFF = self.T_PSNR_DIFF_o * positive_psnr_sum
+                print(f"\033[94m[Dynamic Threshold] T_PSNR_DIFF set to: {self.T_PSNR_DIFF:.6f}\033[0m")
+
+                if positive_psnr_sum < self.reference_point:
+                    print(
+                        f"\033[91m[WARNING] positive_psnr_sum ({positive_psnr_sum:.6f}) is below reference_point ({self.reference_point:.6f}). Retrying with a new dataset sample.\033[0m")
+
+                    # 이터레이터에서 다음 데이터를 가져옴
+                    try:
+                        self.target_image, self.current_file = next(self.data_iter)
+                    except StopIteration:
+                        # 데이터셋 끝에 도달하면 이터레이터를 다시 생성하고 처음부터 다시 시작
+                        print(f"\033[40;93m[INFO] Reached the end of dataset. Restarting from the beginning.\033[0m")
+                        self.data_iter = iter(self.trainloader)
+                        self.target_image, self.current_file = next(self.data_iter)
+
+                    print(
+                        f"\033[40;93m[Episode Start] Currently using dataset file: {self.current_file}, Episode count: {self.episode_num_count}\033[0m")
+
+                    self.target_image = self.target_image.cuda()
+                    self.target_image_np = self.target_image.cpu().numpy()
+
+                    with torch.no_grad():
+                        model_output = self.target_function(self.target_image)
+                    self.observation = model_output.cpu().numpy()  # (1, CH, IPS, IPS)
+
+                    # 매 에피소드마다 초기화
+                    self.max_psnr_diff = float('-inf')
+                    self.steps = 0
+                    self.flip_count = 0
+                    self.psnr_sustained_steps = 0
+                    self.next_print_thresholds = 0
+
+                    self.state = (self.observation >= 0.5).astype(np.int8)  # 초기 Binary state
+                    self.state_record = np.zeros_like(self.state)  # 플립 횟수를 저장하기 위한 배열 초기화
+
+                    binary = torch.tensor(self.state, dtype=torch.float32).cuda()  # (1, CH, IPS, IPS)
+                    binary = tt.Tensor(binary, meta={'dx': (7.56e-6, 7.56e-6), 'wl': 515e-9})  # meta 정보 포함
+
+                    # 시뮬레이션
+                    sim = tt.simulate(binary, z).abs() ** 2
+                    result = torch.mean(sim, dim=1, keepdim=True)
+
+                    # MSE 및 PSNR 계산
+                    mse = tt.relativeLoss(result, self.target_image, F.mse_loss).detach().cpu().numpy()
+                    self.initial_psnr = tt.relativeLoss(result, self.target_image, tm.get_PSNR)  # 초기 PSNR 저장
+                    self.previous_psnr = self.initial_psnr  # 초기 PSNR 저장
+
+                    # 1만 개 픽셀 플립 후 PSNR 변화량 순위화 및 양수 변화량 총합 계산
+                    rw_start_time = time.time()
+                    self.psnr_change_list, self.importance_ranks, positive_psnr_sum = self._calculate_pixel_importance(
+                        binary,
+                        z)
+                    data_processing_time = time.time() - rw_start_time
+                    print(
+                        f"\nTime taken for psnr_change_list: {data_processing_time:.2f} seconds"
+                    )
+
+                    self.T_PSNR_DIFF = self.T_PSNR_DIFF_o * positive_psnr_sum
+                    print(f"\033[94m[Dynamic Threshold] T_PSNR_DIFF set to: {self.T_PSNR_DIFF:.6f}\033[0m")
+
+                    if positive_psnr_sum < self.reference_point:
+                        print(
+                            f"\033[91m[WARNING] positive_psnr_sum ({positive_psnr_sum:.6f}) is below reference_point ({self.reference_point:.6f}). Retrying with a new dataset sample.\033[0m")
+
+                        # 이터레이터에서 다음 데이터를 가져옴
+                        try:
+                            self.target_image, self.current_file = next(self.data_iter)
+                        except StopIteration:
+                            # 데이터셋 끝에 도달하면 이터레이터를 다시 생성하고 처음부터 다시 시작
+                            print(
+                                f"\033[40;93m[INFO] Reached the end of dataset. Restarting from the beginning.\033[0m")
+                            self.data_iter = iter(self.trainloader)
+                            self.target_image, self.current_file = next(self.data_iter)
+
+                        print(
+                            f"\033[40;93m[Episode Start] Currently using dataset file: {self.current_file}, Episode count: {self.episode_num_count}\033[0m")
+
+                        self.target_image = self.target_image.cuda()
+                        self.target_image_np = self.target_image.cpu().numpy()
+
+                        with torch.no_grad():
+                            model_output = self.target_function(self.target_image)
+                        self.observation = model_output.cpu().numpy()  # (1, CH, IPS, IPS)
+
+                        # 매 에피소드마다 초기화
+                        self.max_psnr_diff = float('-inf')
+                        self.steps = 0
+                        self.flip_count = 0
+                        self.psnr_sustained_steps = 0
+                        self.next_print_thresholds = 0
+
+                        self.state = (self.observation >= 0.5).astype(np.int8)  # 초기 Binary state
+                        self.state_record = np.zeros_like(self.state)  # 플립 횟수를 저장하기 위한 배열 초기화
+
+                        binary = torch.tensor(self.state, dtype=torch.float32).cuda()  # (1, CH, IPS, IPS)
+                        binary = tt.Tensor(binary, meta={'dx': (7.56e-6, 7.56e-6), 'wl': 515e-9})  # meta 정보 포함
+
+                        # 시뮬레이션
+                        sim = tt.simulate(binary, z).abs() ** 2
+                        result = torch.mean(sim, dim=1, keepdim=True)
+
+                        # MSE 및 PSNR 계산
+                        mse = tt.relativeLoss(result, self.target_image, F.mse_loss).detach().cpu().numpy()
+                        self.initial_psnr = tt.relativeLoss(result, self.target_image, tm.get_PSNR)  # 초기 PSNR 저장
+                        self.previous_psnr = self.initial_psnr  # 초기 PSNR 저장
+
+                        # 1만 개 픽셀 플립 후 PSNR 변화량 순위화 및 양수 변화량 총합 계산
+                        rw_start_time = time.time()
+                        self.psnr_change_list, self.importance_ranks, positive_psnr_sum = self._calculate_pixel_importance(
+                            binary,
+                            z)
+                        data_processing_time = time.time() - rw_start_time
+                        print(
+                            f"\nTime taken for psnr_change_list: {data_processing_time:.2f} seconds"
+                        )
+
+                        self.T_PSNR_DIFF = self.T_PSNR_DIFF_o * positive_psnr_sum
+                        print(f"\033[94m[Dynamic Threshold] T_PSNR_DIFF set to: {self.T_PSNR_DIFF:.6f}\033[0m")
+
+                        if positive_psnr_sum < self.reference_point:
+                            print(
+                                f"\033[91m[WARNING] positive_psnr_sum ({positive_psnr_sum:.6f}) is below reference_point ({self.reference_point:.6f}). Retrying with a new dataset sample.\033[0m")
+
+                            # 이터레이터에서 다음 데이터를 가져옴
+                            try:
+                                self.target_image, self.current_file = next(self.data_iter)
+                            except StopIteration:
+                                # 데이터셋 끝에 도달하면 이터레이터를 다시 생성하고 처음부터 다시 시작
+                                print(
+                                    f"\033[40;93m[INFO] Reached the end of dataset. Restarting from the beginning.\033[0m")
+                                self.data_iter = iter(self.trainloader)
+                                self.target_image, self.current_file = next(self.data_iter)
+
+                            print(
+                                f"\033[40;93m[Episode Start] Currently using dataset file: {self.current_file}, Episode count: {self.episode_num_count}\033[0m")
+
+                            self.target_image = self.target_image.cuda()
+                            self.target_image_np = self.target_image.cpu().numpy()
+
+                            with torch.no_grad():
+                                model_output = self.target_function(self.target_image)
+                            self.observation = model_output.cpu().numpy()  # (1, CH, IPS, IPS)
+
+                            # 매 에피소드마다 초기화
+                            self.max_psnr_diff = float('-inf')
+                            self.steps = 0
+                            self.flip_count = 0
+                            self.psnr_sustained_steps = 0
+                            self.next_print_thresholds = 0
+
+                            self.state = (self.observation >= 0.5).astype(np.int8)  # 초기 Binary state
+                            self.state_record = np.zeros_like(self.state)  # 플립 횟수를 저장하기 위한 배열 초기화
+
+                            binary = torch.tensor(self.state, dtype=torch.float32).cuda()  # (1, CH, IPS, IPS)
+                            binary = tt.Tensor(binary, meta={'dx': (7.56e-6, 7.56e-6), 'wl': 515e-9})  # meta 정보 포함
+
+                            # 시뮬레이션
+                            sim = tt.simulate(binary, z).abs() ** 2
+                            result = torch.mean(sim, dim=1, keepdim=True)
+
+                            # MSE 및 PSNR 계산
+                            mse = tt.relativeLoss(result, self.target_image, F.mse_loss).detach().cpu().numpy()
+                            self.initial_psnr = tt.relativeLoss(result, self.target_image, tm.get_PSNR)  # 초기 PSNR 저장
+                            self.previous_psnr = self.initial_psnr  # 초기 PSNR 저장
+
+                            # 1만 개 픽셀 플립 후 PSNR 변화량 순위화 및 양수 변화량 총합 계산
+                            rw_start_time = time.time()
+                            self.psnr_change_list, self.importance_ranks, positive_psnr_sum = self._calculate_pixel_importance(
+                                binary,
+                                z)
+                            data_processing_time = time.time() - rw_start_time
+                            print(
+                                f"\nTime taken for psnr_change_list: {data_processing_time:.2f} seconds"
+                            )
+
+                            self.T_PSNR_DIFF = self.T_PSNR_DIFF_o * positive_psnr_sum
+                            print(f"\033[94m[Dynamic Threshold] T_PSNR_DIFF set to: {self.T_PSNR_DIFF:.6f}\033[0m")
+
         obs = {"state_record": self.state_record,
                "state": self.state,
                "pre_model": self.observation,
