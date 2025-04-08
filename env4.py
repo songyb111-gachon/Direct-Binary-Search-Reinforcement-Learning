@@ -91,11 +91,11 @@ class BinaryHologramEnv(gym.Env):
         self.episode_num_count = 0
 
     def _calculate_pixel_importance(self, binary, z):
-        # 랜덤으로 num_samples(예: 10000)번 픽셀 플립 후 PSNR 변화량을 기록
+        # 랜덤으로 num_samples (예: 10000)번 픽셀 플립 후 PSNR 변화량 기록
         num_samples = self.num_samples
         psnr_changes = []
         positive_count = 0  # PSNR 변화량이 양수인 샘플 개수
-        positive_psnr_sum = 0  # 양수 PSNR 변화량 총합 초기화
+        positive_psnr_sum = 0  # 양수 PSNR 변화량 총합
 
         for _ in range(num_samples):
             random_action = np.random.randint(self.num_pixels)
@@ -116,7 +116,7 @@ class BinaryHologramEnv(gym.Env):
             psnr_change = psnr_temp - self.initial_psnr
             psnr_changes.append(psnr_change)
 
-            # PSNR 변화량이 양수인 경우 카운트 증가
+            # 양수 변화량인 경우 누적 (양수 샘플의 개수 파악)
             if psnr_change > 0:
                 positive_count += 1
                 positive_psnr_sum += psnr_change
@@ -124,16 +124,21 @@ class BinaryHologramEnv(gym.Env):
             # 상태 롤백
             self.state[0, channel, row, col] = 1 - self.state[0, channel, row, col]
 
-        # 양수 PSNR 변화 샘플의 확률 계산
-        p_pos = positive_count / num_samples
+        # p_pos : 양수 샘플 비율, 이를 통해 양수 변화량을 가진 샘플이 정확히 몇 개인지 알 수 있음
+        p_pos = positive_count / num_samples  # 전체 샘플 대비 양수 샘플의 비율
 
-        # PSNR 변화량을 내림차순으로 정렬하여 순위를 매김 (최대 변화량이 순위 1)
-        sorted_indices = np.argsort(psnr_changes)[::-1]
+        # 양수인 샘플의 인덱스 추출 (양수 보상 대상)
+        positive_indices = [i for i, change in enumerate(psnr_changes) if change > 0]
+
         importance_ranks = np.zeros(num_samples)
 
-        # 각 샘플의 순위(1부터 시작)에 대해 보상 산출
-        for rank, idx in enumerate(sorted_indices, start=1):
-            importance_ranks[idx] = (1 / rank) * p_pos
+        # 양수 샘플은 내림차순(PSNR 변화량이 큰 순서)으로 정렬
+        sorted_positive_indices = sorted(positive_indices, key=lambda i: psnr_changes[i], reverse=True)
+        # positive_count (또는 p_pos * num_samples) 가 정확히 몇 등까지가 양수인지를 알려줌
+        m = positive_count
+        for rank, idx in enumerate(sorted_positive_indices):
+            # 최고 (rank = 0) : 보상 1, 마지막 (rank = m-1) : 보상 0, 중간은 선형 보간
+            importance_ranks[idx] = (m - 1 - rank) / (m - 1)
 
         return psnr_changes, importance_ranks, positive_psnr_sum
 
