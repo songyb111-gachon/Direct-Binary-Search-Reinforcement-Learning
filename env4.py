@@ -254,12 +254,12 @@ class BinaryHologramEnv(gym.Env):
             # 가장 유사한 PSNR 변화량의 순위 점수를 보상으로 사용
             closest_index = np.argmin(np.abs(np.array(self.psnr_change_list) - psnr_change))
             reward = self.importance_ranks[closest_index]  # 순위 점수 그대로 보상으로 사용
-            print(reward)
+
+        else:
+            reward = 0
 
         # psnr_change가 음수인 경우 상태 롤백 수행
         if psnr_change < 0:
-            reward = 0
-            print(reward)
 
             self.state[0, channel, row, col] = 1 - self.state[0, channel, row, col]
             self.flip_count -= 1
