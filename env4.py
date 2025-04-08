@@ -265,6 +265,7 @@ class BinaryHologramEnv(gym.Env):
             closest_index = np.argmin(np.abs(np.array(self.psnr_change_list) - psnr_change))
             # 기존 순위 기반 보상에 scaling_factor를 곱하여 최종 보상 산출
             reward = self.importance_ranks[closest_index] * scaling_factor
+            print(reward)
         else:
             reward = 0.0
 
