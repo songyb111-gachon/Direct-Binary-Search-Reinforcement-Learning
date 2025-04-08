@@ -91,9 +91,10 @@ class BinaryHologramEnv(gym.Env):
         self.episode_num_count = 0
 
     def _calculate_pixel_importance(self, binary, z):
-        #랜덤으로 1만 개 픽셀 플립 후 PSNR 변화량을 순위화 및 양수 변화량 총합 계산
+        # 랜덤으로 num_samples(예: 10000)번 픽셀 플립 후 PSNR 변화량을 기록
         num_samples = self.num_samples
         psnr_changes = []
+        positive_count = 0  # PSNR 변화량이 양수인 샘플 개수
         positive_psnr_sum = 0  # 양수 PSNR 변화량 총합 초기화
 
         for _ in range(num_samples):
@@ -111,37 +112,28 @@ class BinaryHologramEnv(gym.Env):
             result_temp = torch.mean(sim_temp, dim=1, keepdim=True)
             psnr_temp = tt.relativeLoss(result_temp, self.target_image, tm.get_PSNR)
 
+            # PSNR 변화량 계산
             psnr_change = psnr_temp - self.initial_psnr
             psnr_changes.append(psnr_change)
 
-            # 양수 PSNR 변화량만 누적
+            # PSNR 변화량이 양수인 경우 카운트 증가
             if psnr_change > 0:
+                positive_count += 1
                 positive_psnr_sum += psnr_change
 
             # 상태 롤백
             self.state[0, channel, row, col] = 1 - self.state[0, channel, row, col]
 
-        step_poly = np.array([num_samples, num_samples*90/100, num_samples*80/100, num_samples*50/100, num_samples*25/100, 1])
-        rewards_poly = np.array([-0.5, -0.48, -0.45, -0.35, 0, 1])
-        degree_poly = len(step_poly) - 1  # degree = 5
-        coefficients_poly = np.polyfit(step_poly, rewards_poly, degree_poly)
-        poly_reward = np.poly1d(coefficients_poly)
+        # 양수 PSNR 변화 샘플의 확률 계산
+        p_pos = positive_count / num_samples
 
-        # 기본값(내장 문자열 표현)으로 다항식 보상 함수 출력
-        print("Polynomial Reward Function Equation:")
-        print(poly_reward)
-
-        # PSNR 변화량을 기준으로 순위 매기기 (오름차순 정렬)
-        sorted_indices = np.argsort(psnr_changes)
+        # PSNR 변화량을 내림차순으로 정렬하여 순위를 매김 (최대 변화량이 순위 1)
+        sorted_indices = np.argsort(psnr_changes)[::-1]
         importance_ranks = np.zeros(num_samples)
 
-        for rank, idx in enumerate(sorted_indices):
-            # 순위(rank)를 [10000, 1] 범위의 x값으로 선형 변환
-            # rank = 0  -> x_val = 10000
-            # rank = num_samples-1 -> x_val = 1
-            x_val = num_samples - (num_samples - 1) * (rank / (num_samples - 1))
-            # 다항식 보상 함수를 사용하여 보상값 계산
-            importance_ranks[idx] = poly_reward(x_val)
+        # 각 샘플의 순위(1부터 시작)에 대해 보상 산출
+        for rank, idx in enumerate(sorted_indices, start=1):
+            importance_ranks[idx] = (1 / rank) * p_pos
 
         return psnr_changes, importance_ranks, positive_psnr_sum
 
@@ -256,6 +248,7 @@ class BinaryHologramEnv(gym.Env):
         # 가장 유사한 PSNR 변화량의 순위 점수를 보상으로 사용
         closest_index = np.argmin(np.abs(np.array(self.psnr_change_list) - psnr_change))
         reward = self.importance_ranks[closest_index]  # 순위 점수 그대로 보상으로 사용
+        print(reward)
 
         # psnr_change가 음수인 경우 상태 롤백 수행
         if psnr_change < 0:
