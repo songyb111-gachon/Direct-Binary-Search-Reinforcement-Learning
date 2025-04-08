@@ -139,7 +139,7 @@ class BinaryHologramEnv(gym.Env):
             # 순위(rank)를 [10000, 1] 범위의 x값으로 선형 변환
             # rank = 0  -> x_val = 10000
             # rank = num_samples-1 -> x_val = 1
-            x_val = rank
+            x_val = rank + 1
             # 다항식 보상 함수를 사용하여 보상값 계산
             importance_ranks[idx] = 1/x_val
 
