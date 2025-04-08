@@ -243,19 +243,30 @@ class BinaryHologramEnv(gym.Env):
         psnr_change = psnr_after - self.previous_psnr
         psnr_diff = psnr_after - self.initial_psnr
 
+        # 데이터 내에서 PSNR 변화량이 0에 가장 가까운 샘플(기준 샘플)을 찾음
         neutral_index = np.argmin(np.abs(np.array(self.psnr_change_list)))
         neutral_psnr_change = self.psnr_change_list[neutral_index]
         neutral_rank = self.importance_ranks[neutral_index]
 
-        # 현재 행동으로 얻은 psnr_change가 기준값(neutral_psnr_change)보다 낮으면 보상은 0,
-        # 그렇지 않은 경우 기준 샘플에 해당하는 importance rank를 보상으로 사용
-        if psnr_change < neutral_psnr_change:
-            reward = 0
-        else:
-            # 가장 유사한 PSNR 변화량의 순위 점수를 보상으로 사용
+        # 기존 _calculate_pixel_importance에서 저장한 값을 사용합니다.
+        # (여기서는 절대값 기준으로 0에 가까운 샘플을 기준으로 보상 조건을 결정)
+        # reward_probability (즉, 보상을 받을 확률)
+        reward_probability = (neutral_index + 1) / self.num_pixels
+        # 예를 들어 self.neutral_index가 1500이면 reward_probability ≈ 0.15 (15%)
+        # 최종 보상 상수는 미리 reset 시에 self.final_reward_constant로 정의 (예: 1.0)
+        scaling_factor = 1.0 / reward_probability
+        # scaling_factor = final_reward_constant * num_samples / (neutral_index + 1)
+
+        # 현재 액션에 대한 보상 계산:
+        # "0에 더 가까운" (즉, np.abs(psnr_change)가 작으면 보상이 주어짐)
+        # (원래 코드는 psnr_change가 음수면 롤백하는 식이었으므로, 조건은 필요에 따라 조정하세요.)
+        if np.abs(psnr_change) < np.abs(neutral_psnr_change):
+            # 현재 액션의 psnr_change와 가장 유사한(순위가 매겨진) 값의 인덱스를 찾음
             closest_index = np.argmin(np.abs(np.array(self.psnr_change_list) - psnr_change))
-            reward = self.importance_ranks[closest_index] * 1 / (5000 * neutral_psnr_change(1+neutral_psnr_change)) # 순위 점수 그대로 보상으로 사용
-            print(reward)
+            # 기존 순위 기반 보상에 scaling_factor를 곱하여 최종 보상 산출
+            reward = self.importance_ranks[closest_index] * scaling_factor
+        else:
+            reward = 0.0
 
         # psnr_change가 음수인 경우 상태 롤백 수행
         if psnr_change < 0:
