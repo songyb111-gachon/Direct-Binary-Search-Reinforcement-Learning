@@ -141,7 +141,7 @@ class BinaryHologramEnv(gym.Env):
             # rank = num_samples-1 -> x_val = 1
             x_val = rank
             # 다항식 보상 함수를 사용하여 보상값 계산
-            importance_ranks[idx] = poly_reward(x_val)
+            importance_ranks[idx] = x_val
 
         return psnr_changes, importance_ranks, positive_psnr_sum,
 
