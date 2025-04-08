@@ -121,16 +121,6 @@ class BinaryHologramEnv(gym.Env):
             # 상태 롤백
             self.state[0, channel, row, col] = 1 - self.state[0, channel, row, col]
 
-        step_poly = np.array([num_samples, num_samples*90/100, num_samples*80/100, num_samples*50/100, num_samples*25/100, 1])
-        rewards_poly = np.array([-0.5, -0.48, -0.45, -0.35, 0, 1])
-        degree_poly = len(step_poly) - 1  # degree = 5
-        coefficients_poly = np.polyfit(step_poly, rewards_poly, degree_poly)
-        poly_reward = np.poly1d(coefficients_poly)
-
-        # 기본값(내장 문자열 표현)으로 다항식 보상 함수 출력
-        print("Polynomial Reward Function Equation:")
-        print(poly_reward)
-
         # PSNR 변화량을 기준으로 순위 매기기 (오름차순 정렬)
         sorted_indices = np.argsort(psnr_changes)
         importance_ranks = np.zeros(num_samples)
@@ -253,10 +243,19 @@ class BinaryHologramEnv(gym.Env):
         psnr_change = psnr_after - self.previous_psnr
         psnr_diff = psnr_after - self.initial_psnr
 
-        # 가장 유사한 PSNR 변화량의 순위 점수를 보상으로 사용
-        closest_index = np.argmin(np.abs(np.array(self.psnr_change_list) - psnr_change))
-        reward = self.importance_ranks[closest_index]  # 순위 점수 그대로 보상으로 사용
-        print(self.importance_ranks[closest_index])
+        neutral_index = np.argmin(np.abs(np.array(self.psnr_change_list)))
+        neutral_psnr_change = self.psnr_change_list[neutral_index]
+        neutral_rank = self.importance_ranks[neutral_index]
+
+        # 현재 행동으로 얻은 psnr_change가 기준값(neutral_psnr_change)보다 낮으면 보상은 0,
+        # 그렇지 않은 경우 기준 샘플에 해당하는 importance rank를 보상으로 사용
+        if psnr_change < neutral_psnr_change:
+            reward = 0
+        else:
+            # 가장 유사한 PSNR 변화량의 순위 점수를 보상으로 사용
+            closest_index = np.argmin(np.abs(np.array(self.psnr_change_list) - psnr_change))
+            reward = self.importance_ranks[closest_index] * 1 / (5000 * neutral_psnr_change(1+neutral_psnr_change)) # 순위 점수 그대로 보상으로 사용
+            print(reward)
 
         # psnr_change가 음수인 경우 상태 롤백 수행
         if psnr_change < 0:
