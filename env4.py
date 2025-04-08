@@ -121,6 +121,16 @@ class BinaryHologramEnv(gym.Env):
             # 상태 롤백
             self.state[0, channel, row, col] = 1 - self.state[0, channel, row, col]
 
+        step_poly = np.array([num_samples, num_samples*90/100, num_samples*80/100, num_samples*50/100, num_samples*25/100, 1])
+        rewards_poly = np.array([-0.5, -0.48, -0.45, -0.35, 0, 1])
+        degree_poly = len(step_poly) - 1  # degree = 5
+        coefficients_poly = np.polyfit(step_poly, rewards_poly, degree_poly)
+        poly_reward = np.poly1d(coefficients_poly)
+
+        # 기본값(내장 문자열 표현)으로 다항식 보상 함수 출력
+        print("Polynomial Reward Function Equation:")
+        print(poly_reward)
+
         # PSNR 변화량을 기준으로 순위 매기기 (오름차순 정렬)
         sorted_indices = np.argsort(psnr_changes)
         importance_ranks = np.zeros(num_samples)
@@ -129,11 +139,11 @@ class BinaryHologramEnv(gym.Env):
             # 순위(rank)를 [10000, 1] 범위의 x값으로 선형 변환
             # rank = 0  -> x_val = 10000
             # rank = num_samples-1 -> x_val = 1
-            x_val = rank + 1
+            x_val = num_samples - (num_samples - 1) * (rank / (num_samples - 1))
             # 다항식 보상 함수를 사용하여 보상값 계산
-            importance_ranks[idx] = 1/x_val
+            importance_ranks[idx] = poly_reward(x_val)
 
-        return psnr_changes, importance_ranks, positive_psnr_sum,
+        return psnr_changes, importance_ranks, positive_psnr_sum
 
     def reset(self, seed=None, options=None, z=2e-3):
         torch.cuda.empty_cache()
@@ -243,31 +253,9 @@ class BinaryHologramEnv(gym.Env):
         psnr_change = psnr_after - self.previous_psnr
         psnr_diff = psnr_after - self.initial_psnr
 
-        # 데이터 내에서 PSNR 변화량이 0에 가장 가까운 샘플(기준 샘플)을 찾음
-        neutral_index = np.argmin(np.abs(np.array(self.psnr_change_list)))
-        neutral_psnr_change = self.psnr_change_list[neutral_index]
-        neutral_rank = self.importance_ranks[neutral_index]
-
-        # 기존 _calculate_pixel_importance에서 저장한 값을 사용합니다.
-        # (여기서는 절대값 기준으로 0에 가까운 샘플을 기준으로 보상 조건을 결정)
-        # reward_probability (즉, 보상을 받을 확률)
-        reward_probability = (neutral_index + 1) / self.num_pixels
-        # 예를 들어 self.neutral_index가 1500이면 reward_probability ≈ 0.15 (15%)
-        # 최종 보상 상수는 미리 reset 시에 self.final_reward_constant로 정의 (예: 1.0)
-        scaling_factor = 1.0 / reward_probability
-        # scaling_factor = final_reward_constant * num_samples / (neutral_index + 1)
-
-        # 현재 액션에 대한 보상 계산:
-        # "0에 더 가까운" (즉, np.abs(psnr_change)가 작으면 보상이 주어짐)
-        # (원래 코드는 psnr_change가 음수면 롤백하는 식이었으므로, 조건은 필요에 따라 조정하세요.)
-        if np.abs(psnr_change) < np.abs(neutral_psnr_change):
-            # 현재 액션의 psnr_change와 가장 유사한(순위가 매겨진) 값의 인덱스를 찾음
-            closest_index = np.argmin(np.abs(np.array(self.psnr_change_list) - psnr_change))
-            # 기존 순위 기반 보상에 scaling_factor를 곱하여 최종 보상 산출
-            reward = self.importance_ranks[closest_index] * scaling_factor
-            print(reward)
-        else:
-            reward = 0.0
+        # 가장 유사한 PSNR 변화량의 순위 점수를 보상으로 사용
+        closest_index = np.argmin(np.abs(np.array(self.psnr_change_list) - psnr_change))
+        reward = self.importance_ranks[closest_index]  # 순위 점수 그대로 보상으로 사용
 
         # psnr_change가 음수인 경우 상태 롤백 수행
         if psnr_change < 0:
