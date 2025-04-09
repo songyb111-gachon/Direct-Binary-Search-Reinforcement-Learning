@@ -138,7 +138,7 @@ class BinaryHologramEnv(gym.Env):
         m = positive_count
         for rank, idx in enumerate(sorted_positive_indices):
             # 최고 (rank = 0) : 보상 1, 마지막 (rank = m-1) : 보상 0, 중간은 선형 보간
-            importance_ranks[idx] = ((m - 1 - rank) / (m - 1)) / p_pos
+            importance_ranks[idx] = ((m - 1 - rank) / (m - 1)) / p_pos * 0.001
 
         return psnr_changes, importance_ranks, positive_psnr_sum
 
