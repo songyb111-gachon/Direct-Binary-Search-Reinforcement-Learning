@@ -298,7 +298,7 @@ class BinaryHologramEnv(gym.Env):
             if self.psnr_sustained_steps >= self.T_steps and psnr_diff >= self.T_PSNR_DIFF:   # 성공 에피소드 조건
                 # 스텝에 따른 추가 보상 계산 (선형 보상)
                 m = -1000 / (3 * self.target_step)
-                additional_reward = 100 + m * (self.steps - (2 / 5) * self.target_step)
+                additional_reward = 100 + m * (self.steps - (2 / 5) * self.target_step) * 0.1
                 reward += additional_reward
 
         if self.steps >= self.max_steps:
@@ -313,7 +313,7 @@ class BinaryHologramEnv(gym.Env):
             )
             # 스텝에 따른 추가 보상 계산 (선형 보상)
             m = -1000 / (3 * self.target_step)
-            additional_reward = 100 + m * (self.steps - (2 / 5) * self.target_step)
+            additional_reward = 100 + m * (self.steps - (2 / 5) * self.target_step) * 0.1
             reward += additional_reward
 
         # 성공 종료 조건: PSNR >= T_PSNR 또는 PSNR_DIFF >= T_PSNR_DIFF
