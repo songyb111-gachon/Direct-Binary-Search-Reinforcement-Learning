@@ -40,9 +40,6 @@ class BinaryHologramEnv(gym.Env):
 
         # 관찰 공간 정보
         self.observation_space = spaces.Dict({
-            "state_record": spaces.Box(low=0, high=1, shape=(1, CH, IPS, IPS), dtype=np.int8),
-            "state": spaces.Box(low=0, high=1, shape=(1, CH, IPS, IPS), dtype=np.int8),
-            "pre_model": spaces.Box(low=0, high=1, shape=(1, CH, IPS, IPS), dtype=np.float32),
             "recon_image": spaces.Box(low=0, high=1, shape=(1, 1, IPS, IPS), dtype=np.float32),
             "target_image": spaces.Box(low=0, high=1, shape=(1, 1, IPS, IPS), dtype=np.float32),
         })
@@ -91,11 +88,10 @@ class BinaryHologramEnv(gym.Env):
         self.episode_num_count = 0
 
     def _calculate_pixel_importance(self, binary, z):
-        # 랜덤으로 num_samples개 픽셀 플립 후 PSNR 변화량을 순위화 및 양수 변화량 총합 계산
+        #랜덤으로 1만 개 픽셀 플립 후 PSNR 변화량을 순위화 및 양수 변화량 총합 계산
         num_samples = self.num_samples
         psnr_changes = []
         positive_psnr_sum = 0  # 양수 PSNR 변화량 총합 초기화
-        positive_count = 0  # PSNR 상승한 경우의 개수를 세기 위한 변수
 
         for _ in range(num_samples):
             random_action = np.random.randint(self.num_pixels)
@@ -115,20 +111,14 @@ class BinaryHologramEnv(gym.Env):
             psnr_change = psnr_temp - self.initial_psnr
             psnr_changes.append(psnr_change)
 
-            # 양수 PSNR 변화량만 누적하고 카운트 증가
+            # 양수 PSNR 변화량만 누적
             if psnr_change > 0:
                 positive_psnr_sum += psnr_change
-                positive_count += 1
 
             # 상태 롤백
             self.state[0, channel, row, col] = 1 - self.state[0, channel, row, col]
 
-        # PSNR 상승 확률 계산
-        psnr_increase_probability = positive_count / num_samples
-
-        # 다항식 보상 함수 계산
-        step_poly = np.array([num_samples, num_samples * 90 / 100, num_samples * 80 / 100, num_samples * 50 / 100,
-                              num_samples * 25 / 100, 1])
+        step_poly = np.array([num_samples, num_samples*90/100, num_samples*80/100, num_samples*50/100, num_samples*25/100, 1])
         rewards_poly = np.array([-0.5, -0.48, -0.45, -0.35, 0, 1])
         degree_poly = len(step_poly) - 1  # degree = 5
         coefficients_poly = np.polyfit(step_poly, rewards_poly, degree_poly)
@@ -143,12 +133,14 @@ class BinaryHologramEnv(gym.Env):
         importance_ranks = np.zeros(num_samples)
 
         for rank, idx in enumerate(sorted_indices):
-            # 순위(rank)를 [num_samples, 1] 범위의 x값으로 선형 변환
+            # 순위(rank)를 [10000, 1] 범위의 x값으로 선형 변환
+            # rank = 0  -> x_val = 10000
+            # rank = num_samples-1 -> x_val = 1
             x_val = num_samples - (num_samples - 1) * (rank / (num_samples - 1))
             # 다항식 보상 함수를 사용하여 보상값 계산
             importance_ranks[idx] = poly_reward(x_val)
 
-        return psnr_changes, importance_ranks, positive_psnr_sum, psnr_increase_probability
+        return psnr_changes, importance_ranks, positive_psnr_sum
 
     def reset(self, seed=None, options=None, z=2e-3):
         torch.cuda.empty_cache()
@@ -195,9 +187,9 @@ class BinaryHologramEnv(gym.Env):
         self.initial_psnr = tt.relativeLoss(result, self.target_image, tm.get_PSNR)  # 초기 PSNR 저장
         self.previous_psnr = self.initial_psnr # 초기 PSNR 저장
 
-        # 1만 개 픽셀 플립 후 PSNR 변화량 순위화 및 양수 변화량 총합과 PSNR 상승 확률 계산
+        # 1만 개 픽셀 플립 후 PSNR 변화량 순위화 및 양수 변화량 총합 계산
         rw_start_time = time.time()
-        self.psnr_change_list, self.importance_ranks, positive_psnr_sum, psnr_increase_probability = self._calculate_pixel_importance(binary, z)
+        self.psnr_change_list, self.importance_ranks, positive_psnr_sum = self._calculate_pixel_importance(binary, z)
         data_processing_time = time.time() - rw_start_time
         print(
             f"\nTime taken for psnr_change_list: {data_processing_time:.2f} seconds"
@@ -205,12 +197,8 @@ class BinaryHologramEnv(gym.Env):
 
         self.T_PSNR_DIFF = self.T_PSNR_DIFF_o * positive_psnr_sum
         print(f"\033[94m[Dynamic Threshold] T_PSNR_DIFF set to: {self.T_PSNR_DIFF:.6f}\033[0m")
-        print(f"\033[36mPSNR increase probability: {psnr_increase_probability:.6f}\033[0m")
 
-        obs = {"state_record": self.state_record,
-               "state": self.state,
-               "pre_model": self.observation,
-               "recon_image": result.cpu().numpy(),
+        obs = {"recon_image": result.cpu().numpy(),
                "target_image": self.target_image_np,
                }
 
@@ -248,10 +236,7 @@ class BinaryHologramEnv(gym.Env):
         result_after = torch.mean(sim_after, dim=1, keepdim=True)
         psnr_after = tt.relativeLoss(result_after, self.target_image, tm.get_PSNR)
 
-        obs = {"state_record": self.state_record,
-               "state": self.state,
-               "pre_model": self.observation,
-               "recon_image": result_after.cpu().numpy(),
+        obs = {"recon_image": result_after.cpu().numpy(),
                "target_image": self.target_image_np,
                }
 

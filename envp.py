@@ -40,11 +40,7 @@ class BinaryHologramEnv(gym.Env):
 
         # 관찰 공간 정보
         self.observation_space = spaces.Dict({
-            "state_record": spaces.Box(low=0, high=1, shape=(1, CH, IPS, IPS), dtype=np.int8),
-            "state": spaces.Box(low=0, high=1, shape=(1, CH, IPS, IPS), dtype=np.int8),
             "pre_model": spaces.Box(low=0, high=1, shape=(1, CH, IPS, IPS), dtype=np.float32),
-            "recon_image": spaces.Box(low=0, high=1, shape=(1, 1, IPS, IPS), dtype=np.float32),
-            "target_image": spaces.Box(low=0, high=1, shape=(1, 1, IPS, IPS), dtype=np.float32),
         })
 
         # 행동 공간: 픽셀 하나를 선택하는 인덱스 (CH * IPS * IPS)
@@ -91,11 +87,10 @@ class BinaryHologramEnv(gym.Env):
         self.episode_num_count = 0
 
     def _calculate_pixel_importance(self, binary, z):
-        # 랜덤으로 num_samples (예: 10000)번 픽셀 플립 후 PSNR 변화량 기록
+        #랜덤으로 1만 개 픽셀 플립 후 PSNR 변화량을 순위화 및 양수 변화량 총합 계산
         num_samples = self.num_samples
         psnr_changes = []
-        positive_count = 0  # PSNR 변화량이 양수인 샘플 개수
-        positive_psnr_sum = 0  # 양수 PSNR 변화량 총합
+        positive_psnr_sum = 0  # 양수 PSNR 변화량 총합 초기화
 
         for _ in range(num_samples):
             random_action = np.random.randint(self.num_pixels)
@@ -112,33 +107,37 @@ class BinaryHologramEnv(gym.Env):
             result_temp = torch.mean(sim_temp, dim=1, keepdim=True)
             psnr_temp = tt.relativeLoss(result_temp, self.target_image, tm.get_PSNR)
 
-            # PSNR 변화량 계산
             psnr_change = psnr_temp - self.initial_psnr
             psnr_changes.append(psnr_change)
 
-            # 양수 변화량인 경우 누적 (양수 샘플의 개수 파악)
+            # 양수 PSNR 변화량만 누적
             if psnr_change > 0:
-                positive_count += 1
                 positive_psnr_sum += psnr_change
 
             # 상태 롤백
             self.state[0, channel, row, col] = 1 - self.state[0, channel, row, col]
 
-        # p_pos : 양수 샘플 비율, 이를 통해 양수 변화량을 가진 샘플이 정확히 몇 개인지 알 수 있음
-        p_pos = positive_count / num_samples  # 전체 샘플 대비 양수 샘플의 비율
+        step_poly = np.array([num_samples, num_samples*90/100, num_samples*80/100, num_samples*50/100, num_samples*25/100, 1])
+        rewards_poly = np.array([-0.5, -0.48, -0.45, -0.35, 0, 1])
+        degree_poly = len(step_poly) - 1  # degree = 5
+        coefficients_poly = np.polyfit(step_poly, rewards_poly, degree_poly)
+        poly_reward = np.poly1d(coefficients_poly)
 
-        # 양수인 샘플의 인덱스 추출 (양수 보상 대상)
-        positive_indices = [i for i, change in enumerate(psnr_changes) if change > 0]
+        # 기본값(내장 문자열 표현)으로 다항식 보상 함수 출력
+        print("Polynomial Reward Function Equation:")
+        print(poly_reward)
 
+        # PSNR 변화량을 기준으로 순위 매기기 (오름차순 정렬)
+        sorted_indices = np.argsort(psnr_changes)
         importance_ranks = np.zeros(num_samples)
 
-        # 양수 샘플은 내림차순(PSNR 변화량이 큰 순서)으로 정렬
-        sorted_positive_indices = sorted(positive_indices, key=lambda i: psnr_changes[i], reverse=True)
-        # positive_count (또는 p_pos * num_samples) 가 정확히 몇 등까지가 양수인지를 알려줌
-        m = positive_count
-        for rank, idx in enumerate(sorted_positive_indices):
-            # 최고 (rank = 0) : 보상 1, 마지막 (rank = m-1) : 보상 0, 중간은 선형 보간
-            importance_ranks[idx] = ((m - 1 - rank) / (m - 1)) / p_pos * 0.001
+        for rank, idx in enumerate(sorted_indices):
+            # 순위(rank)를 [10000, 1] 범위의 x값으로 선형 변환
+            # rank = 0  -> x_val = 10000
+            # rank = num_samples-1 -> x_val = 1
+            x_val = num_samples - (num_samples - 1) * (rank / (num_samples - 1))
+            # 다항식 보상 함수를 사용하여 보상값 계산
+            importance_ranks[idx] = poly_reward(x_val)
 
         return psnr_changes, importance_ranks, positive_psnr_sum
 
@@ -198,11 +197,7 @@ class BinaryHologramEnv(gym.Env):
         self.T_PSNR_DIFF = self.T_PSNR_DIFF_o * positive_psnr_sum
         print(f"\033[94m[Dynamic Threshold] T_PSNR_DIFF set to: {self.T_PSNR_DIFF:.6f}\033[0m")
 
-        obs = {"state_record": self.state_record,
-               "state": self.state,
-               "pre_model": self.observation,
-               "recon_image": result.cpu().numpy(),
-               "target_image": self.target_image_np,
+        obs = {"pre_model": self.observation,
                }
 
         print(
@@ -239,24 +234,16 @@ class BinaryHologramEnv(gym.Env):
         result_after = torch.mean(sim_after, dim=1, keepdim=True)
         psnr_after = tt.relativeLoss(result_after, self.target_image, tm.get_PSNR)
 
-        obs = {"state_record": self.state_record,
-               "state": self.state,
-               "pre_model": self.observation,
-               "recon_image": result_after.cpu().numpy(),
-               "target_image": self.target_image_np,
+        obs = {"pre_model": self.observation,
                }
 
         # PSNR 변화량 계산
         psnr_change = psnr_after - self.previous_psnr
         psnr_diff = psnr_after - self.initial_psnr
 
-        if psnr_change > 0:
-            # 가장 유사한 PSNR 변화량의 순위 점수를 보상으로 사용
-            closest_index = np.argmin(np.abs(np.array(self.psnr_change_list) - psnr_change))
-            reward = self.importance_ranks[closest_index]  # 순위 점수 그대로 보상으로 사용
-
-        else:
-            reward = 0
+        # 가장 유사한 PSNR 변화량의 순위 점수를 보상으로 사용
+        closest_index = np.argmin(np.abs(np.array(self.psnr_change_list) - psnr_change))
+        reward = self.importance_ranks[closest_index]  # 순위 점수 그대로 보상으로 사용
 
         # psnr_change가 음수인 경우 상태 롤백 수행
         if psnr_change < 0:
@@ -298,7 +285,7 @@ class BinaryHologramEnv(gym.Env):
             if self.psnr_sustained_steps >= self.T_steps and psnr_diff >= self.T_PSNR_DIFF:   # 성공 에피소드 조건
                 # 스텝에 따른 추가 보상 계산 (선형 보상)
                 m = -1000 / (3 * self.target_step)
-                additional_reward = 100 + m * (self.steps - (2 / 5) * self.target_step) * 0.33
+                additional_reward = 100 + m * (self.steps - (2 / 5) * self.target_step)
                 reward += additional_reward
 
         if self.steps >= self.max_steps:
@@ -313,7 +300,7 @@ class BinaryHologramEnv(gym.Env):
             )
             # 스텝에 따른 추가 보상 계산 (선형 보상)
             m = -1000 / (3 * self.target_step)
-            additional_reward = 100 + m * (self.steps - (2 / 5) * self.target_step) * 0.33
+            additional_reward = 100 + m * (self.steps - (2 / 5) * self.target_step)
             reward += additional_reward
 
         # 성공 종료 조건: PSNR >= T_PSNR 또는 PSNR_DIFF >= T_PSNR_DIFF

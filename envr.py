@@ -41,10 +41,6 @@ class BinaryHologramEnv(gym.Env):
         # 관찰 공간 정보
         self.observation_space = spaces.Dict({
             "state_record": spaces.Box(low=0, high=1, shape=(1, CH, IPS, IPS), dtype=np.int8),
-            "state": spaces.Box(low=0, high=1, shape=(1, CH, IPS, IPS), dtype=np.int8),
-            "pre_model": spaces.Box(low=0, high=1, shape=(1, CH, IPS, IPS), dtype=np.float32),
-            "recon_image": spaces.Box(low=0, high=1, shape=(1, 1, IPS, IPS), dtype=np.float32),
-            "target_image": spaces.Box(low=0, high=1, shape=(1, 1, IPS, IPS), dtype=np.float32),
         })
 
         # 행동 공간: 픽셀 하나를 선택하는 인덱스 (CH * IPS * IPS)
@@ -202,10 +198,6 @@ class BinaryHologramEnv(gym.Env):
         print(f"\033[94m[Dynamic Threshold] T_PSNR_DIFF set to: {self.T_PSNR_DIFF:.6f}\033[0m")
 
         obs = {"state_record": self.state_record,
-               "state": self.state,
-               "pre_model": self.observation,
-               "recon_image": result.cpu().numpy(),
-               "target_image": self.target_image_np,
                }
 
         print(
@@ -243,10 +235,6 @@ class BinaryHologramEnv(gym.Env):
         psnr_after = tt.relativeLoss(result_after, self.target_image, tm.get_PSNR)
 
         obs = {"state_record": self.state_record,
-               "state": self.state,
-               "pre_model": self.observation,
-               "recon_image": result_after.cpu().numpy(),
-               "target_image": self.target_image_np,
                }
 
         # PSNR 변화량 계산
@@ -294,6 +282,11 @@ class BinaryHologramEnv(gym.Env):
             )
             self.psnr_sustained_steps += 1
 
+            if self.psnr_sustained_steps >= self.T_steps and psnr_diff >= self.T_PSNR_DIFF:   # 성공 에피소드 조건
+                # 스텝에 따른 추가 보상 계산 (선형 보상)
+                m = -1000 / (3 * self.target_step)
+                additional_reward = 100 + m * (self.steps - (2 / 5) * self.target_step)
+                reward += additional_reward
 
         if self.steps >= self.max_steps:
             # 현재 PSNR 값이 출력 기준을 충족했는지 확인
@@ -305,7 +298,10 @@ class BinaryHologramEnv(gym.Env):
                 f"\nFlip Pixel: Channel={channel}, Row={row}, Col={col}"
                 f"\nTime taken for this data: {data_processing_time:.2f} seconds"
             )
-
+            # 스텝에 따른 추가 보상 계산 (선형 보상)
+            m = -1000 / (3 * self.target_step)
+            additional_reward = 100 + m * (self.steps - (2 / 5) * self.target_step)
+            reward += additional_reward
 
         # 성공 종료 조건: PSNR >= T_PSNR 또는 PSNR_DIFF >= T_PSNR_DIFF
         terminated = self.psnr_sustained_steps >= self.T_steps and psnr_diff >= self.T_PSNR_DIFF
