@@ -249,8 +249,8 @@ class StopOnEpisodeCallback(BaseCallback):
         return True  # 학습 계속
 
 batch_size = 1
-#target_dir = 'dataset/'
-target_dir = '/nfs/dataset/DIV2K/DIV2K_train_HR/DIV2K_train_HR/'
+target_dir = 'dataset6/'
+#target_dir = '/nfs/dataset/DIV2K/DIV2K_train_HR/DIV2K_train_HR/'
 valid_dir = '/nfs/dataset/DIV2K/DIV2K_valid_HR/DIV2K_valid_HR/'
 meta = {'wl': (515e-9), 'dx': (7.56e-6, 7.56e-6)}  # 메타 정보
 padding = 0
@@ -318,7 +318,7 @@ else:
     )
 
 # 콜백 설정
-max_episodes = 6000  # 원하는 에피소드 수
+max_episodes = 8000  # 원하는 에피소드 수
 reward_logging_callback = RewardLoggingCallback(verbose=1)
 stop_callback = StopOnEpisodeCallback(max_episodes=max_episodes)
 callback = CallbackList([reward_logging_callback, stop_callback])
