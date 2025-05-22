@@ -272,7 +272,7 @@ env = BinaryHologramEnv(
 )
 
 # PPO 모델 로드
-ppo_model_path = "./env0_ppo_MlpPolicy_models/ppo_MlpPolicy_latest.zip"
+ppo_model_path = "./env1_ppo_MlpPolicy_models/ppo_MlpPolicy_latest.zip"
 ppo_model = PPO.load(ppo_model_path, env=env)
 
 # 2. 단일 observation 얻기
@@ -342,62 +342,3 @@ plt.title("Histogram of PPO Action Probabilities (Split into 100 Bins)")
 plt.grid(True, linestyle="--", alpha=0.5)
 plt.tight_layout()
 plt.show()
-
-# 💡 초기 상태 및 PSNR 저장
-binary_before = torch.tensor(env.state, dtype=torch.float32).cuda()
-binary_before = tt.Tensor(binary_before, meta={'dx': (7.56e-6, 7.56e-6), 'wl': 515e-9})
-sim_before = tt.simulate(binary_before, 2e-3).abs() ** 2
-result_before = torch.mean(sim_before, dim=1, keepdim=True)
-psnr_initial = tt.relativeLoss(result_before, env.target_image, tm.get_PSNR)
-psnr = psnr_initial
-print(f"🔹 Initial PSNR: {psnr_initial:.4f}")
-
-# 최대 확률 기준 threshold 설정 (예: 10%)
-max_prob = probs.max()
-threshold = 0.1 * max_prob
-high_prob_indices = np.where(probs >= threshold)[0]
-
-# 성공 카운터
-attempts = 0
-successes = 0
-
-# 픽셀 하나씩 조건부 플립
-for idx in high_prob_indices:
-    channel = idx // (IPS * IPS)
-    pixel_index = idx % (IPS * IPS)
-    row = pixel_index // IPS
-    col = pixel_index % IPS
-
-    # 1. 플립
-    env.state[0, channel, row, col] = 1 - env.state[0, channel, row, col]
-    attempts += 1
-
-    # 2. PSNR 재계산
-    binary_temp = torch.tensor(env.state, dtype=torch.float32).cuda()
-    binary_temp = tt.Tensor(binary_temp, meta={'dx': (7.56e-6, 7.56e-6), 'wl': 515e-9})
-    sim_temp = tt.simulate(binary_temp, 2e-3).abs() ** 2
-    result_temp = torch.mean(sim_temp, dim=1, keepdim=True)
-    psnr_temp = tt.relativeLoss(result_temp, env.target_image, tm.get_PSNR)
-
-    # 3. PSNR 상승 여부에 따라 롤백 또는 유지
-    if psnr_temp >= psnr:
-        # PSNR 향상 → 유지
-        env.state_record[0, channel, row, col] += 1
-        psnr = psnr_temp
-        successes += 1
-        print(f"✅ Keep Flip: Channel={channel}, Row={row}, Col={col} | PSNR: {psnr:.4f}")
-    else:
-        # PSNR 감소 → 롤백
-        env.state[0, channel, row, col] = 1 - env.state[0, channel, row, col]
-        print(f"⛔ Revert Flip: Channel={channel}, Row={row}, Col={col} | PSNR drop to {psnr_temp:.4f}")
-
-# 성공률 계산
-success_rate = successes / attempts if attempts > 0 else 0.0
-psnr_gain = psnr - psnr_initial
-
-# ✅ 최종 결과 출력
-print(f"\n📊 Final PSNR:           {psnr:.4f}")
-print(f"📈 PSNR Gain:            {psnr_gain:.4f}")
-print(f"🔁 Flip Attempts:        {attempts}")
-print(f"✅ Successful Flips:     {successes}")
-print(f"🎯 Success Rate:         {success_rate * 100:.2f}%")
